@@ -31,19 +31,17 @@ async def translate_text(text: str, target: str = "es-MX", model: str = MODEL_DE
     #   2. Call your LLM (async if the client supports it).
     #   3. Clean and return the string.
     #
-    # --- Example: Anthropic Claude -----------------------------------------
-    # from anthropic import AsyncAnthropic
-    # client = AsyncAnthropic()  # reads ANTHROPIC_API_KEY
-    # msg = await client.messages.create(
-    #     model=model,
-    #     max_tokens=1024,
-    #     system=(
-    #         "You are a professional translator. Translate the user's English text "
-    #         "into natural MEXICAN Spanish (es-MX). Return ONLY the translation — no "
-    #         "quotes, no notes. Keep numbers, prices, and product codes unchanged."
-    #     ),
-    #     messages=[{"role": "user", "content": text}],
-    # )
-    # return msg.content[0].text.strip()
-    # -----------------------------------------------------------------------
-    raise NotImplementedError("Implement translate_text() in lib/llm.py")
+    #--- Anthropic Claude -----------------------------------------
+    from anthropic import AsyncAnthropic
+    client = AsyncAnthropic()  # reads ANTHROPIC_API_KEY
+    msg = await client.messages.create(
+        model=model,
+        max_tokens=1024,
+        system=(
+            "You are a professional translator. Translate the user's English text "
+            "into natural MEXICAN Spanish (es-MX). Return ONLY the translation — no "
+            "quotes, no notes. Keep numbers, prices, and product codes unchanged."
+        ),
+        messages=[{"role": "user", "content": text}],
+    )
+    return msg.content[0].text.strip()

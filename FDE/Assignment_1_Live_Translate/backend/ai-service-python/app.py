@@ -15,6 +15,7 @@ TODOs so the widget lights up. Run:
     uvicorn app:app --reload --port 8000
 """
 import os
+from pydoc import text
 import time
 
 from dotenv import load_dotenv
@@ -80,7 +81,15 @@ async def translate_one(text: str, target: str) -> dict:
     #     await cache.set(text, target, translated, model=MODEL)
     #     ...
     # -----------------------------------------------------------------------
-    raise NotImplementedError("Implement the cache/LLM flow in translate_one()")
+    cached_value = await cache.get(text, target)    
+    if cached_value is not None:
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        return {"translated": cached_value, "cached": True, "latencyMs": latency_ms, "model": MODEL}
+    else:
+        translated = await translate_text(text, target, model=MODEL)
+        await cache.set(text, target, translated, model=MODEL)
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        return {"translated": translated, "cached": False, "latencyMs": latency_ms, "model": MODEL} 
 
 
 @app.post("/translate")

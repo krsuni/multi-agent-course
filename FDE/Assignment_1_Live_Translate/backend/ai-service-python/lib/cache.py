@@ -27,44 +27,89 @@ class TwoTierCache:
         self._stats = {"requests": 0, "memory_hits": 0, "db_hits": 0, "misses": 0}
 
     async def init(self) -> None:
-        """Create the translations table if it doesn't exist."""
-        # TODO (YOU): CREATE TABLE IF NOT EXISTS translations(
-        #   key TEXT PRIMARY KEY, source TEXT, target TEXT, translated TEXT,
-        #   model TEXT, access_count INTEGER DEFAULT 1, created_at TIMESTAMP)
-        # and an index on key. Use aiosqlite.connect(self.db_path).
-        raise NotImplementedError("Implement TwoTierCache.init()")
+        async with aiosqlite.connect(self.db_path) as db:
+            """Create the translations table if it doesn't exist."""
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS translations(
+                    key TEXT PRIMARY KEY, source TEXT, target TEXT, translated TEXT,
+                    model TEXT, access_count INTEGER DEFAULT 1, created_at TIMESTAMP
+                )
+            """)    
+            await db.commit()
+            print("Database initialized successfully.")
 
     async def get(self, text: str, target: str) -> str | None:
         """Return a cached translation or None. Check memory, then SQLite."""
         self._stats["requests"] += 1
         k = _key(text, target)
-
         # 1) memory tier
         if k in self._mem:
             self._stats["memory_hits"] += 1
             return self._mem[k]
-
         # 2) SQLite tier
-        # TODO (YOU): SELECT translated FROM translations WHERE key = ?.
         #   On hit: bump access_count, warm the memory tier (self._mem[k]),
         #   record self._stats["db_hits"], and return the value.
         #   On miss: record self._stats["misses"] and return None.
-        raise NotImplementedError("Implement TwoTierCache.get()")
-
+        async with aiosqlite.connect(self.db_path) as db:
+            cur = await db.execute(
+                    "SELECT translated, access_count FROM translations WHERE key = ?",
+                    (k,),
+                )
+            # Run the parameterized SELECT. (k,) is a 1-tuple — required even
+            # for a single placeholder. Using ? instead of f-string avoids
+            # SQL injection.
+            row = await cur.fetchone()
+            # row is None if no match, or e.g. ("Hola, el precio es $5", 3) if found.
+            await cur.close()
+            # Done reading; free the cursor.
+            if row is not None:
+                translated, access_count = row
+                # Unpack the tuple into named values.
+                await db.execute(
+                    "UPDATE translations SET access_count = ? WHERE key = ?",
+                    (access_count + 1, k),
+                )
+                # Bump the access_count column for this row.
+                await db.commit()
+                # Persist the UPDATE — writes are not saved until commit().
+                self._mem[k] = translated
+                # Warm the memory tier so the next get() for this key is instant.
+                self._stats["db_hits"] += 1
+                # Record that this was a database-tier hit.
+                return translated
+                # Give the caller the cached translation.
+            # Fell through: no row in SQLite either.
+            self._stats["misses"] += 1
+            return None
+        
     async def set(self, text: str, target: str, translated: str, model: str) -> None:
         """Store a translation in both tiers."""
         k = _key(text, target)
         self._mem[k] = translated
-        # TODO (YOU): INSERT the row (upsert on key) into SQLite.
-        raise NotImplementedError("Implement TwoTierCache.set()")
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                """
+                INSERT INTO translations (key, source, target, translated, model, access_count, created_at)
+                VALUES (?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    translated = excluded.translated,
+                    model = excluded.model,
+                    access_count = translations.access_count + 1,
+                    created_at = CURRENT_TIMESTAMP
+                """,
+                (k, text, target, translated, model),
+            )
+            await db.commit()
 
     async def size(self) -> int:
+        """Return the number of rows in the SQLite table."""
         async with aiosqlite.connect(self.db_path) as db:
-            async with db.execute("SELECT COUNT(*) FROM translations") as cur:
-                row = await cur.fetchone()
-                return row[0] if row else 0
+            cur = await db.execute("SELECT COUNT(*) FROM translations")
+            row = await cur.fetchone()
+            await cur.close()
+            return row[0] if row else 0
 
-    async def stats(self) -> dict:
+    async def stats(self) -> dict: 
         total = self._stats["memory_hits"] + self._stats["db_hits"] + self._stats["misses"]
         hits = self._stats["memory_hits"] + self._stats["db_hits"]
         hit_rate = round(100 * hits / total, 1) if total else 0.0

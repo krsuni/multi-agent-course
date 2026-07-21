@@ -35,15 +35,16 @@ app.use(express.json({ limit: "1mb" }));
  * status code, and duration in ms. Use res.on("finish", ...) so you can
  * read the final status code and measure elapsed time.
  * Keep it structured enough to grep later.
- *
- * app.use((req, res, next) => {
- *   const t0 = Date.now();
- *   res.on("finish", () => {
- *     // console.log(...method, url, statusCode, Date.now() - t0 + "ms")
- *   });
- *   next();
- * });
  */
+
+app.use((req, res, next) => {
+  const t0 = Date.now();
+  res.on("finish", () => {
+    console.log(req.method, req.url, res.statusCode, Date.now() - t0 + "ms")
+  });
+  next();
+});
+ 
 
 // --- serve the widget to the console loader ------------------------------
 app.get("/widget.js", (req, res) => {
@@ -59,10 +60,13 @@ app.get("/widget.js", (req, res) => {
  * (Node 18+ has global fetch — no import needed.)
  */
 async function callAiService(path, body) {
-  // const res = await fetch(AI_SERVICE_URL + path, { ... });
-  // if (!res.ok) throw new Error("AI service " + res.status);
-  // return res.json();
-  throw new Error("callAiService not implemented — see TODO (YOU) #2");
+  const res = await fetch(AI_SERVICE_URL + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("AI service " + res.status);
+  return res.json();
 }
 
 // --- routes the widget calls ---------------------------------------------
