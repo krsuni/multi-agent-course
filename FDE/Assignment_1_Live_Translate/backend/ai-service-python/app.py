@@ -19,7 +19,7 @@ from pydoc import text
 import time
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from lib.cache import TwoTierCache
@@ -93,11 +93,13 @@ async def translate_one(text: str, target: str) -> dict:
 
 
 @app.post("/translate")
-async def translate(body: TranslateIn):
+async def translate(body: TranslateIn, request: Request):
+    request_id = request.headers.get("X-Request-Id", "unknown")
     result = await translate_one(body.text, body.target)
     log.info(
         "translate",
-        extra={"cached": result["cached"], "latencyMs": result["latencyMs"], "chars": len(body.text)},
+        extra={"cached": result["cached"], "latencyMs": result["latencyMs"], "chars": len(body.text), 
+               "requestId": request_id},
     )
     return result
 
